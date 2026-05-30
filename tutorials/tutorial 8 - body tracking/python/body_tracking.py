@@ -29,7 +29,7 @@ def main():
 
     # Create a InitParameters object and set configuration parameters
     init_params = sl.InitParameters()
-    init_params.camera_resolution = sl.RESOLUTION.HD720  # Use HD720 video mode
+    init_params.camera_resolution = sl.RESOLUTION.HD1080  # Use HD720 video mode
     init_params.depth_mode = sl.DEPTH_MODE.NEURAL
     init_params.coordinate_units = sl.UNIT.METER
     init_params.sdk_verbose = 1
@@ -67,9 +67,17 @@ def main():
     # For indoor scene or closer range, a higher confidence limits the risk of false positives and increase the precision (~50+)
     body_runtime_param.detection_confidence_threshold = 40
     i = 0 
-    while i < 100:
+
+    cv2.namedWindow("ZED", cv2.WINDOW_NORMAL)
+
+    while True:
         if zed.grab() <= sl.ERROR_CODE.SUCCESS:
             err = zed.retrieve_bodies(bodies, body_runtime_param)
+
+            img = sl.Mat()
+            zed.retrieve_image(img, sl.VIEW.LEFT)
+            img_cv = img.get_data()
+
             if bodies.is_new:
                 body_array = bodies.body_list
                 print(str(len(body_array)) + " Person(s) detected\n")
@@ -77,6 +85,7 @@ def main():
                     first_body = body_array[0]
                     print("First Person attributes:")
                     print(" Confidence (" + str(int(first_body.confidence)) + "/100)")
+
                     if body_params.enable_tracking:
                         print(" Tracking ID: " + str(int(first_body.id)) + " tracking state: " + repr(
                             first_body.tracking_state) + " / " + repr(first_body.action_state))
@@ -97,10 +106,28 @@ def main():
                     keypoint = first_body.keypoint
                     for it in keypoint:
                         print("    " + str(it))
+
+                    top_left = first_body.bounding_box_2d[0]
+                    bottom_right = first_body.bounding_box_2d[2]
+                    cv2.rectangle(img_cv, (int(top_left[0]), 
+                                           int(top_left[1])), 
+                                           (int(bottom_right[0]), 
+                                           int(bottom_right[1])), 
+                                           (0,255,0), 2)
+                    
+                    label = f"(Confidence: {str(int(first_body.confidence)/100)})"
+                    cv2.putText(img_cv, label, (int(top_left[0]), int(top_left[1] - 10)), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
+            cv2.imshow("Body detection with ZED", img_cv)
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
         i+=1
     # Close the camera
     zed.disable_body_tracking()
     zed.close()
+    cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
