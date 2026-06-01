@@ -63,6 +63,45 @@ def draw_keypoints(image, keypoints_2d):
             cv2.circle(image, (x, y), 5, (0, 0, 255), -1)
             cv2.circle(image, (x, y), 5, (255, 0, 0), 2)
 
+def draw_body_segmentation(image, body, alpha=0.4):
+    """Display body segmentation mask as colored overlay within bounding box"""
+    if not body.mask.is_init():
+        return image
+    
+    # Get mask data as numpy array
+    mask_data = body.mask.get_data()
+    
+    # Get bounding box coordinates
+    top_left = body.bounding_box_2d[0]
+    bottom_right = body.bounding_box_2d[2]
+    x1, y1 = int(top_left[0]), int(top_left[1])
+    x2, y2 = int(bottom_right[0]), int(bottom_right[1])
+    
+    # Ensure image is 3-channel BGR
+    if len(image.shape) == 2:
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    elif image.shape[2] == 4:
+        image = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
+    
+    # Resize mask to match bounding box dimensions
+    bbox_height = y2 - y1
+    bbox_width = x2 - x1
+    mask_resized = cv2.resize(mask_data, (bbox_width, bbox_height), interpolation=cv2.INTER_NEAREST)
+    
+    # Create binary mask with adjustable threshold
+    if mask_resized.max() <= 1.0:
+        binary_mask = (mask_resized > 0.3).astype(np.uint8)  # Lowered threshold to 0.3
+    else:
+        binary_mask = (mask_resized.astype(np.uint8) > 100).astype(np.uint8)  # Lowered from 128 to 100
+    
+    # Create colored overlay (green for body) - only in bounding box
+    overlay = image.copy()
+    overlay[y1:y2, x1:x2][binary_mask > 0] = [0, 255, 0]  # Green: BGR format
+    
+    # Blend with original image
+    output = cv2.addWeighted(image, 1 - alpha, overlay, alpha, 0)
+    return output
+
 def draw_body_box_with_info(image, body, zed_camera):
     """Draw enhanced bounding box with 3D information"""
     top_left = body.bounding_box_2d[0]
@@ -125,7 +164,7 @@ def main():
 
     # Create a InitParameters object and set configuration parameters
     init_params = sl.InitParameters()
-    init_params.camera_resolution = sl.RESOLUTION.HD1080  # Use HD720 video mode
+    init_params.camera_resolution = sl.RESOLUTION.HD1080 
     init_params.depth_mode = sl.DEPTH_MODE.NEURAL
     init_params.coordinate_units = sl.UNIT.METER
     init_params.sdk_verbose = 1
@@ -208,6 +247,9 @@ def main():
                     draw_body_box_with_info(img_cv, first_body, zed)
                     draw_skeleton(img_cv, keypoint_2d, body_params.body_format)
                     draw_keypoints(img_cv, keypoint_2d)
+                    
+                    # Add segmentation display
+                    img_cv = draw_body_segmentation(img_cv, first_body, alpha=0.3)
 
             cv2.imshow("Body detection with ZED", img_cv)
 
